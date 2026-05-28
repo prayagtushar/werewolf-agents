@@ -1,0 +1,101 @@
+# 🐺 werewolf-agents
+
+**A multi-agent social-deduction game where LLM agents lie, deduce, and vote each other out — running 100% on-device for $0.**
+
+> **Status:** 🚧 Active development. Design is approved; implementation is being built task-by-task per the [implementation plan](docs/superpowers/plans/ai-werewolf-implementation-plan.md). This README describes the target v1.
+
+---
+
+## The jaw-drop
+
+The dashboard shows each agent's **private reasoning** right next to its **public statement**.
+
+You watch a werewolf *think* — *"The Seer is onto me, I'll loudly accuse Dan to redirect the room"* — and then *say* something calm and reasonable. Then you watch the village vote out the wrong person.
+
+That side-by-side — secret intent vs. spoken word — is the whole point.
+
+> _Demo clip coming here once v1 is live._
+
+---
+
+## Why this exists
+
+A portfolio piece demonstrating the things that actually matter for building agentic systems:
+
+- **Multi-agent orchestration** — a deterministic engine drives N LLM agents through a night/day loop.
+- **Structured LLM output** — every turn is Pydantic-validated JSON (`private_reasoning` + `public_action`).
+- **Prompt engineering for role-play & deception** — theory-of-mind and coalition behavior emerge from prompt structure alone.
+- **Local inference / cost engineering** — runs fully on-device via Ollama at **$0/game**.
+- **Evals & observability** — every game is logged; win-rate, deception success, and voting accuracy are tracked over many games.
+- **Real-time streaming UI** — FastAPI + WebSocket streaming to a zero-build dashboard.
+
+## The game (v1)
+
+Classic Werewolf / Mafia, **7 all-AI players**:
+
+| Count | Role | Knows | Night action | Village team? |
+|------:|------|-------|--------------|:-------------:|
+| 2 | **Werewolf** | each other | collectively kill 1 victim | ✗ |
+| 1 | **Seer** | only self | investigate 1 player → werewolf or not | ✓ |
+| 1 | **Doctor** | only self | protect 1 player from the kill | ✓ |
+| 3 | **Villager** | only self | — | ✓ |
+
+**Loop:** Night (wolves kill, seer investigates, doctor protects) → Dawn (reveal the death) → Day (2 discussion rounds, then a vote; ties = no elimination) → check win → repeat.
+
+**Win:** Werewolves win the instant `#wolves ≥ #non-wolves`. The village wins the instant all wolves are dead.
+
+## Architecture
+
+**Core principle: the Game Engine is the single source of truth and contains ZERO LLM code.** Agents only *propose* actions; the engine validates and applies them. A dumb model can never crash or cheat the game.
+
+```
+engine/        pure, deterministic rules — state, roles, phases, resolution, win check (no I/O, no LLM)
+llm/           async Ollama client wrapper + structured output + retries + timeouts
+agents/        agent controller (the "brain"), prompt templates, per-agent memory
+orchestrator   the conductor: ask engine whose turn → prompt agents → validate vs legal moves → apply → emit events
+server/        FastAPI + WebSocket live event stream
+web/           static dashboard (HTML + Tailwind CDN + vanilla JS) — public chat + private-reasoning panels
+evals/         JSONL game logging + win-rate / deception / voting-accuracy analytics
+```
+
+Bad model output never crashes the game: malformed or illegal actions are re-prompted, then fall back to a random *legal* action (logged). All randomness flows through one seeded RNG, so games are reproducible for tests and demos.
+
+## Run it
+
+```bash
+ollama pull qwen2.5:3b          # one-time, ~2GB
+uv sync
+uv run uvicorn werewolf.server.app:app --port 8000
+# open http://localhost:8000 and click "Start game"
+```
+
+## Benchmark
+
+```bash
+uv run python -m werewolf.evals.run_batch -n 10
+```
+
+Reports win-rate by team, average game length, and eliminated-role distribution over N headless games.
+
+## Tests
+
+```bash
+uv run pytest -q && uv run ruff check src tests && uv run mypy src
+```
+
+All tests are offline — the LLM is mocked/scripted, so no Ollama is needed to run the suite.
+
+## Tech stack
+
+Python 3.12 · [uv](https://docs.astral.sh/uv/) · FastAPI + WebSockets · Pydantic v2 · [Ollama](https://ollama.com/) (`qwen2.5:3b`, configurable) · pytest · ruff · mypy. Frontend: static HTML + Tailwind (CDN) + vanilla JS — no build step.
+
+## Roadmap
+
+**v1 (in progress):** full 7-player local game · live private-vs-public dashboard · engine/agent/orchestrator/eval tests green · eval report over ≥10 games · demo clip.
+
+**Deferred to v2:** human-player mode · configurable player counts/roles · extra roles (Hunter, Witch) · vector memory · multi-model (different model per agent) · tournament / Elo.
+
+## Design docs
+
+- [Design spec](docs/superpowers/specs/2026-05-29-ai-werewolf-design.md)
+- [Implementation plan](docs/superpowers/plans/ai-werewolf-implementation-plan.md)

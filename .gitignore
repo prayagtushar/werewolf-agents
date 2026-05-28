@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv / venv
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Game logs / eval output
+data/*.jsonl
+
+# Demo capture artifacts
+demo/*.mov
+demo/*.mp4
+demo/*.gif
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
