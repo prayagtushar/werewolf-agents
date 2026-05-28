@@ -37,13 +37,33 @@ def test_index_is_served():
 def test_ws_streams_a_full_game(monkeypatch):
     monkeypatch.setattr(server_app, "OllamaClient", lambda *a, **k: _Scripted())
     client = TestClient(server_app.app)
-    kinds: list[str] = []
+    events: list[dict] = []
     with client.websocket_connect("/ws/game") as ws:
         while True:
             ev = ws.receive_json()
-            kinds.append(ev["kind"])
+            events.append(ev)
             if ev["kind"] == "result":
                 assert ev["data"]["winner"] in {"village", "werewolf"}
                 break
+    kinds = [e["kind"] for e in events]
     assert "reasoning" in kinds
     assert "speak" in kinds
+    assert "thinking" in kinds
+
+
+def test_thinking_precedes_each_reasoning(monkeypatch):
+    """The dashboard's 'thinking' indicator relies on a thinking event for an actor
+    immediately preceding that actor's reasoning."""
+    monkeypatch.setattr(server_app, "OllamaClient", lambda *a, **k: _Scripted())
+    client = TestClient(server_app.app)
+    events: list[dict] = []
+    with client.websocket_connect("/ws/game") as ws:
+        while True:
+            ev = ws.receive_json()
+            events.append(ev)
+            if ev["kind"] == "result":
+                break
+    for i, ev in enumerate(events):
+        if ev["kind"] == "reasoning":
+            prev = events[i - 1]
+            assert prev["kind"] == "thinking" and prev["actor"] == ev["actor"]

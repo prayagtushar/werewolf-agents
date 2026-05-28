@@ -72,9 +72,11 @@ class GameRunner:
             for name in list(state.living_names()):
                 role = state.by_name(name).role
                 if role == Role.WEREWOLF and kill is None:
+                    yield self._thinking(name)
                     kill, reasoning, _ = await self._ask(name, ActionType.NIGHT_KILL)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
                 elif role == Role.SEER:
+                    yield self._thinking(name)
                     investigate, reasoning, _ = await self._ask(name, ActionType.INVESTIGATE)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
                     if investigate is not None:
@@ -84,6 +86,7 @@ class GameRunner:
                             f"Night {state.day}: you investigated {investigate} -> {verdict}."
                         )
                 elif role == Role.DOCTOR:
+                    yield self._thinking(name)
                     protect, reasoning, _ = await self._ask(name, ActionType.PROTECT)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
             died = self.engine.resolve_night(kill, protect, investigate)
@@ -103,6 +106,7 @@ class GameRunner:
             yield GameEvent(kind="phase", day=state.day, text="day")
             for _ in range(self.discussion_rounds):
                 for name in list(state.living_names()):
+                    yield self._thinking(name)
                     _, reasoning, content = await self._ask(name, ActionType.SPEAK)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
                     text = content or "..."
@@ -113,6 +117,7 @@ class GameRunner:
             # ---------- DAY: vote ----------
             votes: dict[str, str] = {}
             for name in list(state.living_names()):
+                yield self._thinking(name)
                 target, reasoning, _ = await self._ask(name, ActionType.VOTE)
                 yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
                 if target is not None:
@@ -138,6 +143,10 @@ class GameRunner:
         yield GameEvent(
             kind="result", day=state.day, text=f"{winner} wins", data={"winner": winner}
         )
+
+    def _thinking(self, name: str) -> GameEvent:
+        """Signal that an agent is deciding — emitted right before its LLM call."""
+        return GameEvent(kind="thinking", day=self.engine.state.day, actor=name)
 
     def _broadcast(self, note: str) -> None:
         """Add a public fact to every living agent's memory."""

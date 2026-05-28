@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class GameEvent(BaseModel):
-    kind: str  # "phase" | "speak" | "reasoning" | "death" | "vote" | "result"
+    kind: str  # "phase" | "thinking" | "reasoning" | "speak" | "vote" | "death" | "result"
     day: int
     actor: str | None = None
     text: str | None = None
