@@ -2,7 +2,7 @@
 
 **A multi-agent social-deduction game where LLM agents lie, deduce, and vote each other out — running 100% on-device for $0.**
 
-> **Status:** 🚧 Active development. Design is approved; implementation is being built task-by-task per the [implementation plan](docs/superpowers/plans/ai-werewolf-implementation-plan.md). This README describes the target v1.
+> **Status:** ✅ v1 runs end-to-end. Built task-by-task (TDD) per the [implementation plan](docs/superpowers/plans/ai-werewolf-implementation-plan.md); a full 7-player game plays locally on Ollama, streamed live to the dashboard. 27 tests green · ruff + mypy strict clean.
 
 ---
 
@@ -14,7 +14,7 @@ You watch a werewolf *think* — *"The Seer is onto me, I'll loudly accuse Dan t
 
 That side-by-side — secret intent vs. spoken word — is the whole point.
 
-> _Demo clip coming here once v1 is live._
+> **Demo clip:** _add a GIF/MP4 here._ Run the dashboard (below), play a game, and screen-record a moment where a werewolf's amber **Intercepted** reasoning reveals a cover story (flagged `⚠ COVER STORY`, linked by a red thread to its calm public statement) while the town's votes climb on an innocent. Save it under `demo/`.
 
 ---
 
@@ -75,7 +75,10 @@ uv run uvicorn werewolf.server.app:app --port 8000
 uv run python -m werewolf.evals.run_batch -n 10
 ```
 
-Reports win-rate by team, average game length, and eliminated-role distribution over N headless games.
+Plays N headless games (no UI) and writes each to `data/games.jsonl`, then prints a summary:
+win-rate by team, average game length, **village voting accuracy** (share of day-votes that
+ejected an actual werewolf) and a **deception proxy** (how often the town was fooled into lynching
+an innocent). The last two are honest proxies, not ground-truth measures of intent.
 
 ## Tests
 
