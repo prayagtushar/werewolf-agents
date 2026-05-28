@@ -1,0 +1,30 @@
+[project]
+name = "werewolf"
+version = "0.1.0"
+description = "Multi-agent social-deduction game (AI Werewolf), 100% local via Ollama"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "ollama>=0.3",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "websockets>=12",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
