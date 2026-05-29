@@ -1,5 +1,6 @@
 import random
 
+from werewolf.engine.setup import BALANCED_9
 from werewolf.orchestrator import GameRunner
 
 
@@ -45,3 +46,21 @@ async def test_full_game_runs_to_a_winner():
     assert results[0].data["winner"] in {"village", "werewolf"}
     # reasoning events are emitted (the private-vs-public feature)
     assert any(e.kind == "reasoning" for e in events)
+
+
+async def test_no_first_night_kill_spares_everyone_night_one():
+    runner = GameRunner(
+        names=[f"P{i}" for i in range(9)],
+        llm=ScriptedLLM(),
+        rng=random.Random(3),
+        discussion_rounds=1,
+        roles=BALANCED_9,
+        first_night_kill=False,
+    )
+    events = [e async for e in runner.run()]
+    # with the lever off, nobody dies in the night on day 1
+    night1_deaths = [
+        e for e in events if e.kind == "death" and e.day == 1 and "night" in (e.text or "")
+    ]
+    assert night1_deaths == []
+    assert any(e.kind == "result" for e in events)

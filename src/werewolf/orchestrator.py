@@ -21,11 +21,14 @@ class GameRunner:
         rng: random.Random,
         discussion_rounds: int = 2,
         max_days: int = 20,
+        roles: list[Role] | None = None,
+        first_night_kill: bool = True,
     ) -> None:
-        self.engine = GameEngine(new_game(names, rng=rng), rng=rng)
+        self.engine = GameEngine(new_game(names, rng=rng, roles=roles), rng=rng)
         self.rng = rng
         self.discussion_rounds = discussion_rounds
         self.max_days = max_days
+        self.first_night_kill = first_night_kill
         self.agents: dict[str, AgentController] = {
             p.name: AgentController(p.name, p.role, llm, AgentMemory(), rng=rng)
             for p in self.engine.state.players
@@ -71,9 +74,10 @@ class GameRunner:
             kill: str | None = None
             protect: str | None = None
             investigate: str | None = None
+            allow_kill = self.first_night_kill or state.day > 1
             for name in list(state.living_names()):
                 role = state.by_name(name).role
-                if role == Role.WEREWOLF and kill is None:
+                if role == Role.WEREWOLF and kill is None and allow_kill:
                     yield self._thinking(name)
                     kill, reasoning, _ = await self._ask(name, ActionType.NIGHT_KILL)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)

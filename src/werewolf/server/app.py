@@ -8,8 +8,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import os
+
+from werewolf.engine.setup import DEFAULT_PRESET, PRESETS
 from werewolf.llm.ollama_client import OllamaClient
 from werewolf.orchestrator import GameRunner
+
+# Pick the balance preset from the environment (default: the fairer 'balanced-9').
+ACTIVE_PRESET = PRESETS.get(os.environ.get("WEREWOLF_PRESET", DEFAULT_PRESET), PRESETS[DEFAULT_PRESET])
 
 # src/werewolf/server/app.py -> parents[3] is the repo root, where web/ lives.
 WEB_DIR = Path(__file__).resolve().parents[3] / "web"
@@ -24,12 +30,9 @@ NAME_POOL = [
     "Kira", "Liam", "Mira", "Noor", "Otis", "Petra", "Quinn", "Rosa", "Soren", "Talia",
     "Uma", "Viktor", "Wren", "Xander", "Yara", "Zane",
 ]
-PLAYERS_PER_GAME = 7
-
-
-def pick_names(rng: random.Random) -> list[str]:
-    """Seven distinct random names so the cast looks different every game."""
-    return rng.sample(NAME_POOL, PLAYERS_PER_GAME)
+def pick_names(rng: random.Random, count: int) -> list[str]:
+    """Distinct random names so the cast looks different every game."""
+    return rng.sample(NAME_POOL, count)
 
 
 @app.get("/")
@@ -42,10 +45,12 @@ async def game_ws(ws: WebSocket) -> None:
     await ws.accept()
     rng = random.Random()
     runner = GameRunner(
-        names=pick_names(rng),
+        names=pick_names(rng, ACTIVE_PRESET.size),
         llm=OllamaClient(),
         rng=rng,
         discussion_rounds=2,
+        roles=ACTIVE_PRESET.roles,
+        first_night_kill=ACTIVE_PRESET.first_night_kill,
     )
     try:
         async for event in runner.run():

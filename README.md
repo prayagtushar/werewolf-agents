@@ -29,20 +29,23 @@ A portfolio piece demonstrating the things that actually matter for building age
 - **Evals & observability** — every game is logged; win-rate, deception success, and voting accuracy are tracked over many games.
 - **Real-time streaming UI** — FastAPI + WebSocket streaming to a zero-build dashboard.
 
-## The game (v1)
+## The game
 
-Classic Werewolf / Mafia, **7 all-AI players**:
+Classic Werewolf / Mafia, all-AI, with a **random cast each game** and a **configurable, balanced roster**:
 
 | Count | Role | Knows | Night action | Village team? |
 |------:|------|-------|--------------|:-------------:|
 | 2 | **Werewolf** | each other | collectively kill 1 victim | ✗ |
 | 1 | **Seer** | only self | investigate 1 player → werewolf or not | ✓ |
 | 1 | **Doctor** | only self | protect 1 player from the kill | ✓ |
-| 3 | **Villager** | only self | — | ✓ |
+| n | **Villager** | only self | — | ✓ |
 
 **Loop:** Night (wolves kill, seer investigates, doctor protects) → Dawn (reveal the death) → Day (2 discussion rounds, then a vote; ties = no elimination) → check win → repeat.
 
 **Win:** Werewolves win the instant `#wolves ≥ #non-wolves`. The village wins the instant all wolves are dead.
+
+**Balance presets** (`src/werewolf/engine/setup.py`), selected via `WEREWOLF_PRESET`:
+`classic-7` (2 wolves on 5 — wolf-favored), **`balanced-9`** (2 wolves on 7 — the default; fairer and longer), and `merciful-7` (7 players, *no first-night kill* so the town deduces before anyone dies). Because the only way to kill a wolf is a day vote and wolves win at parity, the 7-player classic is genuinely wolf-sided — hence the fairer default.
 
 ## Architecture
 

@@ -171,7 +171,8 @@
       position: relative;
       z-index: 1;
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      /* auto-fit adapts to any player count (7, 9, …) and wraps on small screens */
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
       gap: 0.7rem;
       padding: 1.1rem 1.4rem 0.4rem;
     }
@@ -534,10 +535,9 @@
     @media (max-width: 1023px) {
       main { grid-template-columns: 1fr; }
       .panel { height: 60vh; }
-      .roster { grid-template-columns: repeat(4, 1fr); }
     }
     @media (max-width: 560px) {
-      .roster { grid-template-columns: repeat(3, 1fr); }
+      .roster { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); }
       .brand .tag { display: none; }
     }
 
