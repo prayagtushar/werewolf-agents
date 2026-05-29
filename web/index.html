@@ -620,6 +620,113 @@
       }
       body[data-web="on"] #connector { display: block; }
     }
+
+    /* ---- thinking: rotating ring on the deciding card ---- */
+    .player[data-thinking="true"] .avatar {
+      box-shadow: 0 0 0 2px transparent;
+    }
+    .player[data-thinking="true"]::after {
+      content: ""; position: absolute; inset: -2px; border-radius: 16px; padding: 2px;
+      background: conic-gradient(from 0deg, transparent, var(--private-accent), transparent 60%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: spin 1.4s linear infinite; pointer-events: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* brainwave bars inside the thinking ghost */
+    .brainwave { display: flex; align-items: flex-end; gap: 3px; height: 16px; margin-top: .4rem; }
+    .brainwave span {
+      width: 3px; background: var(--private-accent); border-radius: 2px; opacity: .8;
+      animation: wave 1s ease-in-out infinite;
+    }
+    .brainwave span:nth-child(2) { animation-delay: .12s; }
+    .brainwave span:nth-child(3) { animation-delay: .24s; }
+    .brainwave span:nth-child(4) { animation-delay: .36s; }
+    .brainwave span:nth-child(5) { animation-delay: .48s; }
+    @keyframes wave { 0%,100% { height: 4px; } 50% { height: 16px; } }
+
+    /* "now deciding" chip under the header */
+    #thinkChip {
+      position: fixed; top: 54px; left: 50%; z-index: 19;
+      transform: translate(-50%, -140%); opacity: 0;
+      transition: transform .35s cubic-bezier(.2,.9,.2,1), opacity .35s ease;
+      display: flex; align-items: center; gap: .5rem;
+      font-family: "JetBrains Mono", monospace; font-size: .72rem; letter-spacing: .03em;
+      padding: .4rem .85rem; border-radius: 999px; pointer-events: none;
+      background: color-mix(in srgb, var(--private-bg) 88%, transparent);
+      border: 1px solid rgba(240,168,58,.4); color: var(--private-ink);
+      box-shadow: 0 8px 24px -8px rgba(0,0,0,.6);
+    }
+    #thinkChip[data-show="true"] { transform: translate(-50%, 0); opacity: 1; }
+    #thinkChip .who { color: var(--private-accent); font-weight: 700; }
+    #thinkChip .brain { animation: bob 1.2s ease-in-out infinite; }
+    @keyframes bob { 50% { transform: translateY(-2px) scale(1.08); } }
+
+    /* narrator banner on phase change */
+    #narrator {
+      position: fixed; inset: 0; z-index: 16; display: grid; place-items: center;
+      pointer-events: none; opacity: 0; text-align: center;
+    }
+    #narrator.run { animation: narrate 2.4s ease both; }
+    #narrator .big {
+      display: block; font-family: "Fraunces", serif; font-weight: 800;
+      font-size: clamp(1.8rem, 5vw, 3.2rem); letter-spacing: -.02em;
+      text-shadow: 0 4px 30px rgba(0,0,0,.6);
+    }
+    #narrator .sub {
+      display: block; margin-top: .4rem; font-family: "JetBrains Mono", monospace;
+      font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    }
+    @keyframes narrate {
+      0% { opacity: 0; transform: scale(.96); }
+      15% { opacity: 1; transform: scale(1); }
+      78% { opacity: 1; }
+      100% { opacity: 0; transform: scale(1.02); }
+    }
+
+    /* death flash vignette */
+    #flash {
+      position: fixed; inset: 0; z-index: 17; pointer-events: none; opacity: 0;
+      background: radial-gradient(circle at 50% 45%, transparent 30%, rgba(229,72,77,.5) 120%);
+    }
+    #flash.run { animation: flash .7s ease both; }
+    @keyframes flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+
+    /* instructions modal */
+    #help {
+      position: fixed; inset: 0; z-index: 50; display: none; place-items: center;
+      background: rgba(3,4,10,.78); backdrop-filter: blur(6px); padding: 1.5rem;
+    }
+    #help.show { display: grid; animation: fadeIn .3s ease both; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    #help .sheet {
+      max-width: 600px; width: 100%; max-height: 86vh; overflow-y: auto;
+      background: linear-gradient(180deg, #11162e, #0b1020);
+      border: 1px solid var(--line); border-radius: 20px; padding: 1.8rem 2rem;
+      box-shadow: 0 30px 80px -20px rgba(0,0,0,.7);
+    }
+    #help h2 { font-family: "Fraunces", serif; font-weight: 800; margin: 0 0 .2rem; font-size: 1.7rem; }
+    #help .lede { color: var(--muted); margin: 0 0 1.2rem; font-size: .95rem; }
+    #help h3 {
+      font-family: "JetBrains Mono", monospace; font-size: .68rem; letter-spacing: .2em;
+      text-transform: uppercase; color: var(--private-accent); margin: 1.2rem 0 .5rem;
+    }
+    #help ul { margin: 0; padding-left: 1.1rem; }
+    #help li { margin: .35rem 0; font-size: .92rem; line-height: 1.5; }
+    #help .roles { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin: .3rem 0; }
+    #help .role { border: 1px solid var(--line); border-radius: 10px; padding: .5rem .7rem; font-size: .85rem; }
+    #help .role b { font-family: "JetBrains Mono", monospace; }
+    #help kbd {
+      font-family: "JetBrains Mono", monospace; font-size: .72rem; background: rgba(255,255,255,.08);
+      border: 1px solid var(--line); border-radius: 5px; padding: .05rem .35rem;
+    }
+    #help .close {
+      margin-top: 1.4rem; width: 100%; padding: .7rem; border: none; border-radius: 10px; cursor: pointer;
+      font-family: "JetBrains Mono", monospace; font-weight: 700; letter-spacing: .05em;
+      background: linear-gradient(180deg, #ffd592, var(--private-accent)); color: #0a0a12;
+    }
+    @media (max-width: 520px) { #help .roles { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body data-web="off">
@@ -638,6 +745,7 @@
       </div>
       <button class="iconbtn" id="muteToggle" aria-pressed="false" aria-label="toggle sound">🔊</button>
       <button class="iconbtn" id="webToggle" aria-pressed="false" aria-label="toggle suspicion web">🕸</button>
+      <button class="iconbtn" id="helpToggle" aria-label="how to watch">?</button>
       <div class="phase-pill" id="phasePill"><span class="dot"></span><span id="phaseText">awaiting</span></div>
       <button class="start" id="start">Start game</button>
     </div>
@@ -676,11 +784,53 @@
 
   <svg id="connector"><path id="connectorPath" d="" /></svg>
   <div class="sweep" id="sweep"></div>
+  <div id="flash"></div>
+  <div id="narrator"></div>
+
+  <div id="thinkChip" data-show="false">
+    <span class="brain">🧠</span><span class="who"></span><span>is deciding…</span>
+  </div>
 
   <div class="win" id="win">
     <div class="card">
       <h2 id="winTitle"></h2>
       <p id="winSub"></p>
+    </div>
+  </div>
+
+  <div id="help" role="dialog" aria-modal="true" aria-label="how to watch">
+    <div class="sheet">
+      <h2>🐺 How to watch</h2>
+      <p class="lede">Seven AI agents play Werewolf. They lie, deduce, and vote one another out — and you see what they <em>secretly think</em> next to what they <em>publicly say</em>.</p>
+
+      <h3>The two columns</h3>
+      <ul>
+        <li><b>The Square</b> (left) — what every agent says out loud, on the record.</li>
+        <li><b>🔒 Intercepted</b> (right) — each agent's private reasoning, hidden from the others. When a private thought is a cover story, it's flagged <b style="color:var(--wolf)">⚠ cover story</b> and a red thread links it to the calm public lie it produced.</li>
+      </ul>
+
+      <h3>The roles</h3>
+      <div class="roles">
+        <div class="role">🐺 <b>Werewolves</b> ×2 — kill one villager each night; blend in by day.</div>
+        <div class="role">🔮 <b>Seer</b> ×1 — learns if one player is a wolf each night.</div>
+        <div class="role">✚ <b>Doctor</b> ×1 — protects one player from the night kill.</div>
+        <div class="role">🧑 <b>Villagers</b> ×3 — no powers, only judgment.</div>
+      </div>
+      <p class="lede" style="margin:.6rem 0 0">Roles are hidden until a player dies. Village wins when all wolves are out; wolves win when they reach parity.</p>
+
+      <h3>How a round flows</h3>
+      <ul>
+        <li><b>🌙 Night</b> — wolves, seer and doctor act in secret.</li>
+        <li><b>☀ Day</b> — everyone discusses (watch the 🧠 <em>deciding</em> indicator), then votes. Most-voted player is eliminated and revealed.</li>
+      </ul>
+
+      <h3>Controls</h3>
+      <ul>
+        <li><kbd>1</kbd> / <kbd>2</kbd> / <kbd>0</kbd> — playback speed: normal, fast, instant.</li>
+        <li>🔊 mute · 🕸 open <b>The Web</b> (live accusation graph — who suspects whom) · ? this help.</li>
+      </ul>
+
+      <button class="close" id="helpClose">Got it — let's watch</button>
     </div>
   </div>
 

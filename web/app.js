@@ -1,7 +1,7 @@
 "use strict";
 
 // ============================================================ constants / state
-const NAMES = ["Ava", "Ben", "Cleo", "Dan", "Eve", "Finn", "Gwen"];
+let NAMES = ["Ava", "Ben", "Cleo", "Dan", "Eve", "Finn", "Gwen"]; // replaced per game by the 'setup' event
 const ROLE_META = {
   werewolf: { glyph: "🐺", team: "werewolf", color: "var(--wolf)" },
   seer: { glyph: "🔮", team: "village", color: "var(--seer)" },
@@ -141,16 +141,17 @@ const Typewriter = {
 
 // ============================================================ Queue / pacing
 const PRE = {
-  phase: 600,
-  thinking: 110,
-  reasoning: 200,
-  speak: 150,
-  vote: 240,
-  death: 900,
-  result: 1100,
-  no_elimination: 500,
+  setup: 0,
+  phase: 1000,
+  thinking: 150,
+  reasoning: 320,
+  speak: 260,
+  vote: 340,
+  death: 1100,
+  result: 1300,
+  no_elimination: 750,
 };
-const POST = { phase: 900, speak: 380, vote: 320, death: 650, no_elimination: 550 };
+const POST = { phase: 1150, reasoning: 140, speak: 560, vote: 430, death: 850, no_elimination: 650 };
 const preDelay = (ev) => (ev.kind === "phase" && ev.text === "no_elimination" ? PRE.no_elimination : PRE[ev.kind] || 0);
 const postDelay = (ev) => (ev.kind === "phase" && ev.text === "no_elimination" ? POST.no_elimination : POST[ev.kind] || 0);
 
@@ -186,13 +187,30 @@ const Queue = {
 // ============================================================ Thinking indicator
 const Thinking = {
   map: new Map(), // actor -> ghost node
+  current: null,
+  chip() {
+    return $("thinkChip");
+  },
+  showChip(actor) {
+    this.current = actor;
+    const chip = this.chip();
+    chip.querySelector(".who").textContent = actor;
+    chip.dataset.show = "true";
+  },
+  hideChip(actor) {
+    if (actor && this.current !== actor) return;
+    this.current = null;
+    this.chip().dataset.show = "false";
+  },
   show(actor) {
     const c = cardOf(actor);
     if (c && c.dataset.alive === "true") c.dataset.thinking = "true";
+    this.showChip(actor);
     const ghost = el(
       "div",
       "private-bubble ghost",
-      `<div class="tagline">🔒 ${esc(actor)} · thinking<span class="dots"></span></div>`
+      `<div class="tagline">🧠 ${esc(actor)} is deciding<span class="dots"></span></div>
+       <div class="brainwave"><span></span><span></span><span></span><span></span><span></span></div>`
     );
     ghost.dataset.thinkingActor = actor;
     appendTo(privateFeed, ghost, $("privatePill"));
@@ -202,6 +220,7 @@ const Thinking = {
   consume(actor) {
     const c = cardOf(actor);
     if (c) c.removeAttribute("data-thinking");
+    this.hideChip(actor);
     const g = this.map.get(actor);
     this.map.delete(actor);
     return g || null;
@@ -209,6 +228,7 @@ const Thinking = {
   clear(actor) {
     const c = cardOf(actor);
     if (c) c.removeAttribute("data-thinking");
+    this.hideChip(actor);
     const g = this.map.get(actor);
     if (g) g.remove();
     this.map.delete(actor);
@@ -216,11 +236,23 @@ const Thinking = {
   clearAll() {
     for (const [, g] of this.map) g.remove();
     this.map.clear();
+    this.current = null;
+    if (this.chip()) this.chip().dataset.show = "false";
     roster.querySelectorAll(".player[data-thinking]").forEach((c) => c.removeAttribute("data-thinking"));
   },
 };
 
 // ============================================================ handlers
+function onSetup(ev) {
+  const names = ev.data && ev.data.players;
+  if (Array.isArray(names) && names.length) NAMES = names;
+  state.players.clear();
+  for (const n of NAMES) state.players.set(n, { alive: true, role: null });
+  renderRoster();
+  Graph.edges.clear();
+  if (Graph.running || REDUCE) Graph.resize();
+}
+
 function onPhase(ev) {
   Thinking.clearAll();
   if (ev.text === "no_elimination") {
@@ -232,6 +264,7 @@ function onPhase(ev) {
   document.documentElement.dataset.phase = ev.text;
   setPhasePill(ev.text, ev.day);
   runSweep();
+  narrate(ev.text, ev.day);
   phasePill.dataset.live = "true";
   if (ev.text === "day") {
     state.votes.clear();
@@ -310,9 +343,9 @@ function onDeath(ev) {
   state.players.set(ev.actor, p);
   flipCard(ev.actor, role);
   if (role === "werewolf") confirmLies(ev.actor);
-  Graph.dirty = true;
-  Graph.scheduleDraw();
+  Graph.poke();
   SoundKit.sting();
+  deathFlash();
   appendTo(publicFeed, el("div", "plaque death", "💀&nbsp; " + esc(ev.text)), $("publicPill"));
 }
 
@@ -321,8 +354,7 @@ function onResult(ev) {
   const winner = (ev.data && ev.data.winner) || "village";
   revealAll();
   clearSpotlight();
-  Graph.dirty = true;
-  Graph.scheduleDraw();
+  Graph.poke();
   SoundKit.fanfare(winner);
   SoundKit.stopAmbient();
   showWin(winner);
@@ -334,6 +366,7 @@ function onClosed() {
 }
 
 const HANDLERS = {
+  setup: onSetup,
   phase: onPhase,
   thinking: onThinking,
   reasoning: onReasoning,
@@ -496,16 +529,16 @@ function mentionedNames(text, living, self) {
   return out;
 }
 const Graph = {
-  edges: new Map(), // "from>to" -> {from,to,weight,kind}
+  edges: new Map(), // "from>to" -> {from,to,weight,kind,appear,flash}
   canvas: null,
   ctx: null,
   pos: null,
   rafId: 0,
-  dirty: true,
+  running: false,
+  t: 0,
   reset() {
     this.edges.clear();
-    this.dirty = true;
-    this.scheduleDraw();
+    if (this.ctx) this.draw();
   },
   bump(from, to, kind) {
     if (!from || !to || from === to) return;
@@ -513,129 +546,237 @@ const Graph = {
     const e = this.edges.get(k);
     if (e) {
       e.weight++;
+      e.flash = 1; // pulse on reinforcement
       if (kind === "vote") e.kind = "vote";
-    } else this.edges.set(k, { from, to, weight: 1, kind });
-    this.dirty = true;
-    this.scheduleDraw();
+    } else {
+      this.edges.set(k, { from, to, weight: 1, kind, appear: 0, flash: 1 });
+    }
+    if ((REDUCE || !this.running) && this.ctx) this.draw();
   },
   mentions(actor, text) {
     for (const n of mentionedNames(text, livingNames(), actor)) this.bump(actor, n, "mention");
+  },
+  incoming(name) {
+    let s = 0;
+    for (const e of this.edges.values())
+      if (e.to === name) s += e.kind === "vote" ? e.weight * 1.6 : e.weight;
+    return s;
   },
   ensure() {
     if (this.canvas) return;
     this.canvas = $("webCanvas");
     if (!this.canvas) return;
     this.ctx = this.canvas.getContext("2d");
-    this.resize();
-    window.addEventListener("resize", () => this.resize());
+    window.addEventListener("resize", () => {
+      if (this.running || REDUCE) this.resize();
+    });
   },
   resize() {
-    if (!this.canvas) return;
+    if (!this.canvas || !this.ctx) return;
     const r = this.canvas.getBoundingClientRect();
     if (r.width === 0) return;
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = r.width * dpr;
     this.canvas.height = r.height * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.w = r.width;
+    this.h = r.height;
     const cx = r.width / 2;
-    const cy = r.height / 2;
-    const rad = Math.min(cx, cy) - 38;
+    const cy = r.height / 2 - 4;
+    this.rad = Math.min(cx, cy) - 46;
     this.pos = {};
     NAMES.forEach((n, i) => {
       const a = -Math.PI / 2 + (i / NAMES.length) * Math.PI * 2;
-      this.pos[n] = { x: cx + rad * Math.cos(a), y: cy + rad * Math.sin(a), a };
+      this.pos[n] = { x: cx + this.rad * Math.cos(a), y: cy + this.rad * Math.sin(a), a };
     });
-    this.dirty = true;
+    this.cx = cx;
+    this.cy = cy;
     this.draw();
   },
-  scheduleDraw() {
-    if (!this.canvas) return;
-    if (REDUCE) {
+  start() {
+    this.ensure();
+    this.resize();
+    if (REDUCE || !this.canvas) {
       this.draw();
       return;
     }
-    if (!this.rafId)
-      this.rafId = requestAnimationFrame(() => {
-        this.rafId = 0;
-        if (this.dirty) {
-          this.dirty = false;
-          this.draw();
-        }
-      });
+    if (this.running) return;
+    this.running = true;
+    const loop = () => {
+      if (!this.running) return;
+      this.t += 0.016;
+      this.draw();
+      this.rafId = requestAnimationFrame(loop);
+    };
+    loop();
+  },
+  stop() {
+    this.running = false;
+    cancelAnimationFrame(this.rafId);
+  },
+  poke() {
+    // redraw on a data change when the live loop isn't running (panel closed / reduced motion)
+    if (!this.running && this.ctx) this.draw();
+  },
+  _ctrl(a, b) {
+    // consistent clockwise bow so reciprocal edges don't overlap
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    return { x: mx + (a.y - b.y) * 0.22, y: my + (b.x - a.x) * 0.22 };
+  },
+  _pt(a, c, b, u) {
+    const v = 1 - u;
+    return {
+      x: v * v * a.x + 2 * v * u * c.x + u * u * b.x,
+      y: v * v * a.y + 2 * v * u * c.y + u * u * b.y,
+    };
   },
   draw() {
     if (!this.ctx || !this.pos) return;
     const ctx = this.ctx;
-    const r = this.canvas.getBoundingClientRect();
-    ctx.clearRect(0, 0, r.width, r.height);
-    // edges
+    const t = this.t;
+    ctx.clearRect(0, 0, this.w, this.h);
+
+    // ---- faint web backdrop: concentric rings + spokes ----
+    ctx.save();
+    ctx.strokeStyle = "rgba(150,170,230,0.06)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.arc(this.cx, this.cy, (this.rad * i) / 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    for (const n of NAMES) {
+      const p = this.pos[n];
+      ctx.beginPath();
+      ctx.moveTo(this.cx, this.cy);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // ---- edges: flowing, weight-scaled, arrowed ----
+    let topName = null;
+    let topVal = 0;
+    for (const n of NAMES) {
+      const inc = this.incoming(n);
+      if (inc > topVal && (state.players.get(n)?.alive ?? true)) {
+        topVal = inc;
+        topName = n;
+      }
+    }
+
     for (const e of this.edges.values()) {
       const a = this.pos[e.from];
       const b = this.pos[e.to];
       if (!a || !b) continue;
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      // bow the control point outward from center for separation
-      const nx = my - (a.y + b.y) / 2;
-      const cxp = mx + (a.y - b.y) * 0.18;
-      const cyp = my + (b.x - a.x) * 0.18 + nx;
+      e.appear += (1 - e.appear) * 0.12;
+      e.flash *= 0.92;
+      const c = this._ctrl(a, b);
       const vote = e.kind === "vote";
+      const base = Math.min(0.85, 0.22 + e.weight * 0.16) * e.appear;
+      const rgb = vote ? "229,72,77" : "120,150,235";
+
+      ctx.save();
+      ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
-      ctx.quadraticCurveTo(cxp, cyp, b.x, b.y);
-      ctx.strokeStyle = vote ? "rgba(229,72,77," : "rgba(150,170,220,";
-      ctx.strokeStyle += Math.min(0.85, 0.25 + e.weight * 0.18) + ")";
-      ctx.lineWidth = (vote ? 1.4 : 0.8) + e.weight;
+      ctx.quadraticCurveTo(c.x, c.y, b.x, b.y);
+      ctx.strokeStyle = `rgba(${rgb},${base + e.flash * 0.4})`;
+      ctx.lineWidth = ((vote ? 1.6 : 0.8) + e.weight * 0.9) * e.appear;
+      if (vote && !REDUCE) {
+        ctx.setLineDash([5, 9]);
+        ctx.lineDashOffset = -t * 36; // accusation "flows" toward target
+        ctx.shadowColor = `rgba(${rgb},0.7)`;
+        ctx.shadowBlur = 6 + e.flash * 10;
+      }
       ctx.stroke();
+      ctx.restore();
+
       // arrowhead at target
-      const ang = Math.atan2(b.y - cyp, b.x - cxp);
-      ctx.fillStyle = ctx.strokeStyle;
+      const near = this._pt(a, c, b, 0.92);
+      const ang = Math.atan2(b.y - near.y, b.x - near.x);
+      ctx.fillStyle = `rgba(${rgb},${Math.min(0.95, base + 0.25)})`;
       ctx.beginPath();
       ctx.moveTo(b.x, b.y);
-      ctx.lineTo(b.x - 9 * Math.cos(ang - 0.4), b.y - 9 * Math.sin(ang - 0.4));
-      ctx.lineTo(b.x - 9 * Math.cos(ang + 0.4), b.y - 9 * Math.sin(ang + 0.4));
+      ctx.lineTo(b.x - 10 * Math.cos(ang - 0.42), b.y - 10 * Math.sin(ang - 0.42));
+      ctx.lineTo(b.x - 10 * Math.cos(ang + 0.42), b.y - 10 * Math.sin(ang + 0.42));
       ctx.closePath();
       ctx.fill();
+
+      // travelling pulse along vote edges
+      if (vote && !REDUCE) {
+        const u = (t * 0.45 + (e.from.charCodeAt(0) % 7) / 7) % 1;
+        const pp = this._pt(a, c, b, u);
+        ctx.beginPath();
+        ctx.arc(pp.x, pp.y, 2.6, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,150,150,${0.9 * e.appear})`;
+        ctx.shadowColor = "rgba(229,72,77,0.9)";
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
     }
-    // nodes
-    let max = 0;
-    for (const v of state.votes.values()) max = Math.max(max, v);
+
+    // ---- nodes ----
     for (const n of NAMES) {
       const p = this.pos[n];
       const pl = state.players.get(n) || { alive: true };
-      ctx.globalAlpha = pl.alive ? 1 : 0.4;
+      const inc = this.incoming(n);
+      const radius = 11 + Math.min(9, inc * 1.4);
+      const lead = n === topName && topVal > 0;
+      ctx.globalAlpha = pl.alive ? 1 : 0.38;
+
+      // glow halo
+      const pulse = pl.alive ? 0.5 + 0.5 * Math.sin(t * 2.2 + hue(n)) : 0;
+      const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius + 14 + pulse * 6);
+      const hc = lead ? "229,72,77" : `hsl(${hue(n)} 70% 60%)`;
+      halo.addColorStop(0, lead ? `rgba(229,72,77,${0.35 + pulse * 0.25})` : `hsla(${hue(n)},70%,60%,0.28)`);
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = halo;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 13, 0, Math.PI * 2);
-      ctx.fillStyle = pl.alive ? `hsl(${hue(n)} 70% 60%)` : "#444";
+      ctx.arc(p.x, p.y, radius + 14 + pulse * 6, 0, Math.PI * 2);
       ctx.fill();
-      if (max > 0 && (state.votes.get(n) || 0) === max && pl.alive) {
-        ctx.strokeStyle = "rgba(229,72,77,.95)";
+
+      // node body
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = pl.alive ? `hsl(${hue(n)} 70% 60%)` : "#3a3a44";
+      ctx.fill();
+      if (lead) {
+        ctx.strokeStyle = `rgba(229,72,77,${0.7 + pulse * 0.3})`;
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 17, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, radius + 5 + pulse * 2, 0, Math.PI * 2);
         ctx.stroke();
       }
-      ctx.fillStyle = pl.alive ? "#0a0a12" : "#fff";
-      ctx.font = "700 11px 'JetBrains Mono', monospace";
+      // initial
+      ctx.fillStyle = pl.alive ? "#0a0a12" : "#cfcfe0";
+      ctx.font = "700 12px 'JetBrains Mono', monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(n[0], p.x, p.y);
-      // label outside ring
-      const lx = p.x + 22 * Math.cos(p.a);
-      const ly = p.y + 22 * Math.sin(p.a);
-      ctx.fillStyle = pl.alive ? "rgba(233,236,255,.85)" : "rgba(150,150,170,.6)";
-      ctx.font = "500 10px 'JetBrains Mono', monospace";
-      ctx.textAlign = Math.cos(p.a) >= 0 ? "left" : "right";
+      ctx.fillText(pl.alive ? n[0] : "✕", p.x, p.y);
+
+      // label outside
+      const lx = p.x + (radius + 11) * Math.cos(p.a);
+      const ly = p.y + (radius + 11) * Math.sin(p.a);
+      ctx.font = "600 10px 'JetBrains Mono', monospace";
+      ctx.textAlign = Math.cos(p.a) >= 0.2 ? "left" : Math.cos(p.a) <= -0.2 ? "right" : "center";
+      ctx.fillStyle = pl.alive ? "rgba(233,236,255,.9)" : "rgba(150,150,170,.55)";
       ctx.fillText(n, lx, ly);
-      if (!pl.alive) {
-        ctx.strokeStyle = "rgba(150,150,170,.6)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(lx - (ctx.textAlign === "left" ? 0 : 28), ly);
-        ctx.lineTo(lx + (ctx.textAlign === "left" ? 28 : 0), ly);
-        ctx.stroke();
-      }
       ctx.globalAlpha = 1;
+    }
+
+    // ---- center readout ----
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(233,236,255,.4)";
+    ctx.font = "700 9px 'JetBrains Mono', monospace";
+    ctx.fillText(`DAY ${state.day || 1}`, this.cx, this.cy - 7);
+    if (topName) {
+      ctx.fillStyle = "rgba(229,72,77,.85)";
+      ctx.font = "700 11px 'JetBrains Mono', monospace";
+      ctx.fillText(`▼ ${topName}`, this.cx, this.cy + 7);
     }
   },
 };
@@ -888,6 +1029,25 @@ function runSweep() {
   void s.offsetWidth;
   s.classList.add("run");
 }
+function narrate(phase, day) {
+  const n = $("narrator");
+  if (!n) return;
+  n.innerHTML =
+    phase === "night"
+      ? `<span class="big">🌙 Night ${day}</span><span class="sub">the village sleeps — wolves, seer and doctor move in secret</span>`
+      : `<span class="big">☀ Day ${day}</span><span class="sub">the town gathers to accuse, defend, and vote</span>`;
+  n.classList.remove("run");
+  void n.offsetWidth;
+  n.classList.add("run");
+}
+function deathFlash() {
+  if (REDUCE) return;
+  const f = $("flash");
+  if (!f) return;
+  f.classList.remove("run");
+  void f.offsetWidth;
+  f.classList.add("run");
+}
 function showWin(winner) {
   const win = $("win");
   win.dataset.winner = winner;
@@ -1004,11 +1164,26 @@ $("webToggle").addEventListener("click", () => {
   const on = document.body.dataset.web === "on";
   document.body.dataset.web = on ? "off" : "on";
   $("webToggle").setAttribute("aria-pressed", String(!on));
-  if (!on) {
-    Graph.ensure();
-    requestAnimationFrame(() => Graph.resize());
-  }
+  if (!on) requestAnimationFrame(() => Graph.start());
+  else Graph.stop();
 });
+
+// instructions / help
+const help = $("help");
+const openHelp = () => help.classList.add("show");
+const closeHelp = () => help.classList.remove("show");
+$("helpToggle").addEventListener("click", openHelp);
+$("helpClose").addEventListener("click", closeHelp);
+help.addEventListener("click", (e) => {
+  if (e.target === help) closeHelp();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeHelp();
+});
+if (!localStorage.getItem("ww.seen")) {
+  openHelp();
+  localStorage.setItem("ww.seen", "1");
+}
 
 // scroll pills
 [$("publicPill"), $("privatePill")].forEach((pill) => {

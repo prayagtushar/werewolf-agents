@@ -63,6 +63,8 @@ class GameRunner:
 
     async def run(self) -> AsyncIterator[GameEvent]:
         state = self.engine.state
+        # announce the roster first so the UI can build itself around these players
+        yield GameEvent(kind="setup", day=state.day, data={"players": state.living_names()})
         while state.winner is None and state.day <= self.max_days:
             # ---------- NIGHT ----------
             yield GameEvent(kind="phase", day=state.day, text="night")

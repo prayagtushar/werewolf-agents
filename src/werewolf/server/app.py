@@ -17,7 +17,19 @@ WEB_DIR = Path(__file__).resolve().parents[3] / "web"
 app = FastAPI(title="AI Werewolf")
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
-DEFAULT_NAMES = ["Ava", "Ben", "Cleo", "Dan", "Eve", "Finn", "Gwen"]
+# A pool of distinct, single-token names so each game has a fresh, non-repeating cast.
+# Kept single-token (no substrings of one another) so the UI's name-mention graph stays clean.
+NAME_POOL = [
+    "Ava", "Ben", "Cleo", "Dax", "Eve", "Finn", "Greta", "Hugo", "Iris", "Jonas",
+    "Kira", "Liam", "Mira", "Noor", "Otis", "Petra", "Quinn", "Rosa", "Soren", "Talia",
+    "Uma", "Viktor", "Wren", "Xander", "Yara", "Zane",
+]
+PLAYERS_PER_GAME = 7
+
+
+def pick_names(rng: random.Random) -> list[str]:
+    """Seven distinct random names so the cast looks different every game."""
+    return rng.sample(NAME_POOL, PLAYERS_PER_GAME)
 
 
 @app.get("/")
@@ -28,10 +40,11 @@ async def index() -> FileResponse:
 @app.websocket("/ws/game")
 async def game_ws(ws: WebSocket) -> None:
     await ws.accept()
+    rng = random.Random()
     runner = GameRunner(
-        names=DEFAULT_NAMES,
+        names=pick_names(rng),
         llm=OllamaClient(),
-        rng=random.Random(),
+        rng=rng,
         discussion_rounds=2,
     )
     try:
