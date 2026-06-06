@@ -17,6 +17,9 @@ class PublicActionModel(BaseModel):
 class AgentResponse(BaseModel):
     private_reasoning: str = Field(..., description="Hidden true strategy")
     public_action: PublicActionModel
+    # True only for controller-synthesized fallbacks (model produced nothing usable).
+    # Never set by the model; lets the eval harness measure model-failure rate.
+    fallback: bool = False
 
 
 class LLMClient(Protocol):

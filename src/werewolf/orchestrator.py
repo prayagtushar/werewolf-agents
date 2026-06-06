@@ -29,8 +29,13 @@ class GameRunner:
         self.discussion_rounds = discussion_rounds
         self.max_days = max_days
         self.first_night_kill = first_night_kill
+        # observability: how many agent decisions ran, and how many fell back
+        # (model produced nothing usable) — surfaced in the final result event.
+        self.decisions = 0
+        self.fallbacks = 0
+        num_players = len(self.engine.state.players)
         self.agents: dict[str, AgentController] = {
-            p.name: AgentController(p.name, p.role, llm, AgentMemory(), rng=rng)
+            p.name: AgentController(p.name, p.role, llm, AgentMemory(), num_players, rng=rng)
             for p in self.engine.state.players
         }
         # seed each agent's memory with its own role
@@ -62,6 +67,9 @@ class GameRunner:
             action_type=action,
             legal_targets=targets,
         )
+        self.decisions += 1
+        if resp.fallback:
+            self.fallbacks += 1
         return resp.public_action.target, resp.private_reasoning, resp.public_action.content
 
     async def run(self) -> AsyncIterator[GameEvent]:
@@ -71,16 +79,23 @@ class GameRunner:
         while state.winner is None and state.day <= self.max_days:
             # ---------- NIGHT ----------
             yield GameEvent(kind="phase", day=state.day, text="night")
-            kill: str | None = None
             protect: str | None = None
             investigate: str | None = None
             allow_kill = self.first_night_kill or state.day > 1
+            wolf_proposals: dict[str, str] = {}
             for name in list(state.living_names()):
                 role = state.by_name(name).role
-                if role == Role.WEREWOLF and kill is None and allow_kill:
+                if role == Role.WEREWOLF and allow_kill:
                     yield self._thinking(name)
-                    kill, reasoning, _ = await self._ask(name, ActionType.NIGHT_KILL)
+                    target, reasoning, _ = await self._ask(name, ActionType.NIGHT_KILL)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
+                    if target is not None:
+                        wolf_proposals[name] = target
+                        # the rest of the pack sees this pick so it can coordinate
+                        for other in self._other_living_wolves(name):
+                            self.agents[other].memory.add(
+                                f"Night {state.day}: your packmate {name} wants to kill {target}."
+                            )
                 elif role == Role.SEER:
                     yield self._thinking(name)
                     investigate, reasoning, _ = await self._ask(name, ActionType.INVESTIGATE)
@@ -95,6 +110,17 @@ class GameRunner:
                     yield self._thinking(name)
                     protect, reasoning, _ = await self._ask(name, ActionType.PROTECT)
                     yield GameEvent(kind="reasoning", day=state.day, actor=name, text=reasoning)
+            kill = self.engine.resolve_pack_kill(wolf_proposals)
+            if kill is not None:
+                # the pack remembers its own target — useful for day-time cover stories
+                self._wolf_broadcast(f"Night {state.day}: the pack agreed to kill {kill}.")
+            if self.engine.was_saved(kill, protect):
+                yield GameEvent(
+                    kind="save",
+                    day=state.day,
+                    actor=protect,
+                    text=f"{protect} was saved from the wolves by the doctor.",
+                )
             died = self.engine.resolve_night(kill, protect, investigate)
             if died is not None:
                 role_name = state.by_name(died).role.value
@@ -146,8 +172,18 @@ class GameRunner:
             self.engine.start_next_night()
 
         winner = state.winner.value if state.winner else "none"
+        # start_next_night() bumps the day before the loop re-checks max_days, so when
+        # a game ends at the cap without a winner, clamp to the last day actually played.
+        days_played = min(state.day, self.max_days)
         yield GameEvent(
-            kind="result", day=state.day, text=f"{winner} wins", data={"winner": winner}
+            kind="result",
+            day=days_played,
+            text=f"{winner} wins",
+            data={
+                "winner": winner,
+                "decisions": self.decisions,
+                "fallbacks": self.fallbacks,
+            },
         )
 
     def _thinking(self, name: str) -> GameEvent:
@@ -158,3 +194,17 @@ class GameRunner:
         """Add a public fact to every living agent's memory."""
         for name in self.engine.state.living_names():
             self.agents[name].memory.add(note)
+
+    def _other_living_wolves(self, name: str) -> list[str]:
+        """Living werewolves other than ``name`` — the rest of the pack."""
+        return [
+            p.name
+            for p in self.engine.state.living()
+            if p.role == Role.WEREWOLF and p.name != name
+        ]
+
+    def _wolf_broadcast(self, note: str) -> None:
+        """Add a secret fact to every living werewolf's memory (pack channel)."""
+        for p in self.engine.state.living():
+            if p.role == Role.WEREWOLF:
+                self.agents[p.name].memory.add(note)

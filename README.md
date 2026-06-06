@@ -2,17 +2,23 @@
 
 **A multi-agent social-deduction game where LLM agents lie, deduce, and vote each other out — running 100% on-device for $0.**
 
-> **Status:** ✅ v1 runs end-to-end. Built task-by-task (TDD) per the [implementation plan](docs/superpowers/plans/ai-werewolf-implementation-plan.md); a full 7-player game plays locally on Ollama, streamed live to the dashboard. 27 tests green · ruff + mypy strict clean.
+[![CI](https://github.com/prayagtushar/werewolf-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/prayagtushar/werewolf-agents/actions/workflows/ci.yml)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![mypy: strict](https://img.shields.io/badge/mypy-strict-blue)
+
+> **Status:** ✅ v1 runs end-to-end. Built task-by-task (TDD) per the [implementation plan](docs/superpowers/plans/ai-werewolf-implementation-plan.md); a full game (7–9 players) plays locally on Ollama, streamed live to a dashboard or the terminal. 65 tests green · ruff + mypy strict clean.
 
 ---
 
 ## Highlights
 
-- Multi-agent social-deduction game: 2–7 LLM agents across 4 roles (werewolf, seer, doctor, villager).
-- **Dual-channel output** per turn — `private_reasoning` vs `public_action` (validated Pydantic JSON) — so model intent vs behavior is fully observable.
-- **Deterministic game engine fully separated from the LLM**: malformed model output is re-prompted, then falls back to a random legal move, so bad generations never crash a game.
+- Multi-agent social-deduction game: 7 or 9 LLM agents across 4 roles (werewolf, seer, doctor, villager).
+- **Dual-channel output** per turn — `private_reasoning` vs `public_action` (JSON-schema-constrained Pydantic) — so model intent vs behavior is fully observable.
+- **The werewolf pack coordinates**: every wolf acts at night, sees its packmates' picks in private memory, and the kill is the pack's majority vote (ties broken fairly).
+- **Deterministic game engine fully separated from the LLM**: malformed output *or a model timeout/transport error* is re-prompted, then falls back to a random legal move — so a bad or slow model never crashes a game.
 - AsyncIO orchestrator streaming `GameEvent`s over **WebSocket** to a live dashboard; per-agent memory across turns.
-- **Eval harness**: win-rate, village voting accuracy, and a deception proxy over batch runs; 27 tests, mypy-strict.
+- **Eval harness**: win-rate, voting accuracy, deception proxy, doctor-save rate, first-blood, and the model's **fallback / valid-output rate** over batch runs; 65 tests, mypy-strict.
 - Runs at **$0 on local Ollama** (`qwen2.5:3b`); 3 balanced presets selectable via env var.
 
 ---
@@ -64,7 +70,7 @@ Classic Werewolf / Mafia, all-AI, with a **random cast each game** and a **confi
 
 ```
 engine/        pure, deterministic rules — state, roles, phases, resolution, win check (no I/O, no LLM)
-llm/           async Ollama client wrapper + structured output + retries + timeouts
+llm/           async Ollama client — JSON-schema-constrained output, real timeouts, retries
 agents/        agent controller (the "brain"), prompt templates, per-agent memory
 orchestrator   the conductor: ask engine whose turn → prompt agents → validate vs legal moves → apply → emit events
 server/        FastAPI + WebSocket live event stream
@@ -72,7 +78,7 @@ web/           static dashboard (HTML + Tailwind CDN + vanilla JS) — public ch
 evals/         JSONL game logging + win-rate / deception / voting-accuracy analytics
 ```
 
-Bad model output never crashes the game: malformed or illegal actions are re-prompted, then fall back to a random *legal* action (logged). All randomness flows through one seeded RNG, so games are reproducible for tests and demos.
+Bad model output — **or a model timeout / transport failure** — never crashes the game: it's re-prompted, then falls back to a random *legal* action (counted as a fallback for the eval metrics). All randomness flows through one seeded RNG, so games are reproducible for tests and demos.
 
 ## Run it
 
@@ -83,16 +89,26 @@ uv run uvicorn werewolf.server.app:app --port 8000
 # open http://localhost:8000 and click "Start game"
 ```
 
+Prefer the terminal? Watch one game stream as text — each agent's private reasoning
+printed right beside its public statement:
+
+```bash
+uv run python -m werewolf.watch --seed 7      # reproducible; --preset picks the roster
+```
+
 ## Benchmark
 
 ```bash
-uv run python -m werewolf.evals.run_batch -n 10
+uv run python -m werewolf.evals.run_batch -n 10 --preset balanced-9
 ```
 
-Plays N headless games (no UI) and writes each to `data/games.jsonl`, then prints a summary:
-win-rate by team, average game length, **village voting accuracy** (share of day-votes that
-ejected an actual werewolf) and a **deception proxy** (how often the town was fooled into lynching
-an innocent). The last two are honest proxies, not ground-truth measures of intent.
+Plays N headless games (no UI; `--preset` matches the live server's `WEREWOLF_PRESET`) and
+writes each to `data/games.jsonl`, then prints a summary: win-rate by team, average game
+length, **voting accuracy** (share of day-votes that ejected an actual werewolf), a
+**deception proxy** (how often the town was fooled into lynching an innocent),
+**doctor-save rate**, **first-blood**, and the model's **fallback / valid-output rate**
+(how often a generation was unusable and had to fall back). The voting/deception figures
+are honest proxies, not ground-truth measures of intent.
 
 ## Tests
 

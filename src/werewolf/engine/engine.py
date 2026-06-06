@@ -38,9 +38,27 @@ class GameEngine:
         self._check_winner()
         return died
 
+    def was_saved(self, kill_target: str | None, protect_target: str | None) -> bool:
+        """True when the doctor's protection landed on the wolves' chosen victim."""
+        return kill_target is not None and kill_target == protect_target
+
     def investigate(self, target: str) -> bool:
         """Seer query: True if target is a werewolf."""
         return self.state.by_name(target).role == Role.WEREWOLF
+
+    def resolve_pack_kill(self, proposals: dict[str, str]) -> str | None:
+        """Collapse the werewolves' individual kill proposals into one victim.
+
+        The most-proposed target wins. Ties are broken by the seeded RNG so the
+        pack always strikes when at least one wolf acted; an empty set of proposals
+        (no wolf moved tonight) means no kill.
+        """
+        if not proposals:
+            return None
+        counts = Counter(proposals.values())
+        top = max(counts.values())
+        tied = sorted(name for name, c in counts.items() if c == top)
+        return self.rng.choice(tied)
 
     # ---- day ----
     def tally_votes(self, votes: dict[str, str]) -> str | None:
@@ -85,7 +103,10 @@ class GameEngine:
     def legal_targets(self, actor: str, action: ActionType) -> list[str]:
         """Valid targets for a given action by a given actor."""
         living = self.state.living_names()
-        if action in (ActionType.VOTE, ActionType.NIGHT_KILL, ActionType.INVESTIGATE):
+        if action == ActionType.NIGHT_KILL:
+            # the pack never kills its own — wolves may only target living non-wolves
+            return [p.name for p in self.state.living() if p.role != Role.WEREWOLF]
+        if action in (ActionType.VOTE, ActionType.INVESTIGATE):
             return [n for n in living if n != actor]
         if action == ActionType.PROTECT:
             return living  # doctor may protect self

@@ -11,6 +11,9 @@ class GameRecord(BaseModel):
     days: int
     eliminated_roles: list[str] = Field(default_factory=list)  # all deaths (night + day vote)
     day_vote_roles: list[str] = Field(default_factory=list)  # roles removed by the DAY vote only
+    decisions: int = 0  # total agent decisions this game
+    fallbacks: int = 0  # decisions where the model produced nothing usable
+    saves: int = 0  # nights the doctor's protect blocked the wolves' kill
 
 
 def append_record(record: GameRecord, path: Path) -> None:

@@ -2,7 +2,7 @@ import random
 
 from werewolf.engine.engine import GameEngine
 from werewolf.engine.setup import new_game
-from werewolf.engine.types import Phase, Role
+from werewolf.engine.types import ActionType, Phase, Role
 
 
 def _engine() -> GameEngine:
@@ -37,3 +37,50 @@ def test_investigate_returns_false_for_villager():
     eng = _engine()
     villager = next(p for p in eng.state.players if p.role == Role.VILLAGER)
     assert eng.investigate(villager.name) is False
+
+
+def test_pack_kill_picks_majority_target():
+    eng = _engine()
+    assert eng.resolve_pack_kill({"A": "C", "B": "C", "D": "E"}) == "C"
+
+
+def test_pack_kill_single_wolf_kills_their_target():
+    eng = _engine()
+    assert eng.resolve_pack_kill({"A": "C"}) == "C"
+
+
+def test_pack_kill_breaks_tie_so_pack_always_strikes():
+    eng = _engine()  # seeded rng
+    result = eng.resolve_pack_kill({"A": "C", "B": "E"})
+    assert result in {"C", "E"}  # a definite victim, never a no-op tie
+
+
+def test_pack_kill_empty_returns_none():
+    eng = _engine()
+    assert eng.resolve_pack_kill({}) is None
+
+
+def test_was_saved_true_when_doctor_protects_the_kill_target():
+    eng = _engine()
+    assert eng.was_saved("C", "C") is True
+
+
+def test_was_saved_false_when_no_kill():
+    eng = _engine()
+    assert eng.was_saved(None, "C") is False
+
+
+def test_was_saved_false_when_protect_misses():
+    eng = _engine()
+    assert eng.was_saved("C", "D") is False
+
+
+def test_night_kill_targets_exclude_fellow_werewolves():
+    # The pack must never be able to kill its own — a wolf's legal kill targets
+    # are the living non-wolves only.
+    eng = _engine()
+    wolves = {w.name for w in eng.state.living_werewolves()}
+    actor = next(iter(wolves))
+    targets = eng.legal_targets(actor, ActionType.NIGHT_KILL)
+    assert wolves.isdisjoint(targets)
+    assert len(targets) > 0

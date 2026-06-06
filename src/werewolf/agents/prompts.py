@@ -34,7 +34,7 @@ WIN_CONDITIONS: dict[Role, str] = {
     Role.VILLAGER: "The village wins when every werewolf is eliminated.",
 }
 
-SYSTEM_TEMPLATE = """You are {name}, playing a game of Werewolf with 6 other players.
+SYSTEM_TEMPLATE = """You are {name}, playing a game of Werewolf with {others} other players.
 
 YOUR SECRET ROLE: {role}
 {briefing}
@@ -69,10 +69,11 @@ YOUR LEGAL ACTION RIGHT NOW: {legal_instruction}
 Respond with your JSON now."""
 
 
-def build_system_prompt(name: str, role: Role) -> str:
+def build_system_prompt(name: str, role: Role, num_players: int) -> str:
     return SYSTEM_TEMPLATE.format(
         name=name,
         role=role.value,
+        others=num_players - 1,
         briefing=ROLE_BRIEFINGS[role],
         win_condition=WIN_CONDITIONS[role],
     )

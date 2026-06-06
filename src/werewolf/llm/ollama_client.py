@@ -9,9 +9,11 @@ env var (e.g. ``WEREWOLF_LLM_PROVIDER``). Not built now on purpose (YAGNI).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -21,6 +23,16 @@ _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 DEFAULT_MODEL = os.environ.get("WEREWOLF_OLLAMA_MODEL", "qwen2.5:3b")
 DEFAULT_HOST = os.environ.get("WEREWOLF_OLLAMA_HOST")  # None -> ollama library default
+
+
+def response_format() -> dict[str, Any]:
+    """JSON Schema handed to Ollama's ``format=`` so decoding is constrained to the
+    agent contract (private_reasoning + public_action). This sharply reduces malformed
+    output vs. free-form ``format="json"``. The internal ``fallback`` flag is stripped
+    out — only the controller sets it, never the model."""
+    schema: dict[str, Any] = AgentResponse.model_json_schema()
+    schema.get("properties", {}).pop("fallback", None)
+    return schema
 
 
 class ParseError(ValueError):
@@ -56,17 +68,25 @@ class OllamaClient:
         self.host = host
 
     async def complete_json(self, system: str, user: str) -> str:
+        """Call the model, enforcing ``self.timeout`` so a hung generation can't
+        stall a game forever. On timeout this raises ``asyncio.TimeoutError``, which
+        the AgentController treats like any bad generation (retry, then fall back)."""
+        return await asyncio.wait_for(self._chat(system, user), timeout=self.timeout)
+
+    async def _chat(self, system: str, user: str) -> str:
         import ollama  # imported lazily so tests don't need the server
 
-        client = ollama.AsyncClient(host=self.host) if self.host else ollama.AsyncClient()
-        resp = await client.chat(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            format="json",
-            options={"temperature": 0.8},
-        )
+        # context-managed so the underlying httpx connection is released even when
+        # asyncio.wait_for cancels this coroutine mid-request on timeout.
+        async with ollama.AsyncClient(host=self.host) as client:
+            resp = await client.chat(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                format=response_format(),
+                options={"temperature": 0.8},
+            )
         content = resp["message"]["content"]
         return str(content)
