@@ -23,18 +23,6 @@
 
 ---
 
-## The jaw-drop
-
-The dashboard shows each agent's **private reasoning** right next to its **public statement**.
-
-You watch a werewolf *think* — *"The Seer is onto me, I'll loudly accuse Dan to redirect the room"* — and then *say* something calm and reasonable. Then you watch the village vote out the wrong person.
-
-That side-by-side — secret intent vs. spoken word — is the whole point.
-
-> **Demo clip:** _add a GIF/MP4 here._ Run the dashboard (below), play a game, and screen-record a moment where a werewolf's amber **Intercepted** reasoning reveals a cover story (flagged `⚠ COVER STORY`, linked by a red thread to its calm public statement) while the town's votes climb on an innocent. Save it under `demo/`.
-
----
-
 ## Why this exists
 
 A portfolio piece demonstrating the things that actually matter for building agentic systems:
