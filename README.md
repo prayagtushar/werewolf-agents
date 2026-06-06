@@ -6,6 +6,17 @@
 
 ---
 
+## Highlights
+
+- Multi-agent social-deduction game: 2–7 LLM agents across 4 roles (werewolf, seer, doctor, villager).
+- **Dual-channel output** per turn — `private_reasoning` vs `public_action` (validated Pydantic JSON) — so model intent vs behavior is fully observable.
+- **Deterministic game engine fully separated from the LLM**: malformed model output is re-prompted, then falls back to a random legal move, so bad generations never crash a game.
+- AsyncIO orchestrator streaming `GameEvent`s over **WebSocket** to a live dashboard; per-agent memory across turns.
+- **Eval harness**: win-rate, village voting accuracy, and a deception proxy over batch runs; 27 tests, mypy-strict.
+- Runs at **$0 on local Ollama** (`qwen2.5:3b`); 3 balanced presets selectable via env var.
+
+---
+
 ## The jaw-drop
 
 The dashboard shows each agent's **private reasoning** right next to its **public statement**.
